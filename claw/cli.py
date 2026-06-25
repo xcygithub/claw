@@ -9,15 +9,8 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
 from claw import ui
-from claw.agent import Agent
-from claw.config import load_settings
-from claw.llm.client import LLMClient
-from claw.memory import load_project_memory
-from claw.messages import Conversation
-from claw.prompts import build_system_prompt
-from claw.safety import SafetyManager
-from claw.todos import TodoStore
-from claw.tools import build_default_registry
+from claw.core.console_sink import ConsoleEventSink
+from claw.core.engine import ClawEngine
 
 HELP_TEXT = """可用命令:
   /help            显示帮助
@@ -32,29 +25,10 @@ HELP_TEXT = """可用命令:
 
 class ClawApp:
     def __init__(self) -> None:
-        self.settings = load_settings()
-        self.client = LLMClient(
-            model=self.settings.model,
-            api_base=self.settings.api_base,
-            api_key=self.settings.api_key,
-        )
-        self.safety = SafetyManager(auto_approve=self.settings.auto_approve)
-        self.todo_store = TodoStore()
-        self.registry = build_default_registry(
-            memory_path=self.settings.memory_file,
-            todo_store=self.todo_store,
-        )
-        memory = load_project_memory(self.settings.memory_file)
-        if memory:
-            ui.info(f"已加载项目记忆: {self.settings.memory_file}")
-        self.conversation = Conversation(build_system_prompt(memory))
-        self.agent = Agent(
-            client=self.client,
-            registry=self.registry,
-            conversation=self.conversation,
-            safety=self.safety,
-            settings=self.settings,
-        )
+        self.sink = ConsoleEventSink()
+        self.engine = ClawEngine(sink=self.sink)
+        if self.engine.has_memory:
+            ui.info(f"已加载项目记忆: {self.engine.settings.memory_file}")
 
     def handle_command(self, line: str) -> bool:
         """处理斜杠命令; 返回 True 表示应退出。"""
@@ -68,28 +42,27 @@ class ClawApp:
             ui.console.print(HELP_TEXT)
         elif cmd == "/model":
             if not arg:
-                ui.info(f"当前模型: {self.settings.model}")
+                ui.info(f"当前模型: {self.engine.settings.model}")
             else:
-                self.settings.model = arg
-                self.client.model = arg
+                self.engine.switch_model(arg)
                 ui.info(f"已切换模型: {arg}")
         elif cmd == "/tools":
-            for tool in self.registry.all():
-                ui.console.print(f"  [cyan]{tool.name}[/cyan] - {tool.description}")
+            for name, desc in self.engine.list_tools():
+                ui.console.print(f"  [cyan]{name}[/cyan] - {desc}")
         elif cmd == "/todos":
-            ui.todo_list(self.todo_store.render())
+            ui.todo_list(self.engine.render_todos())
         elif cmd == "/clear":
-            self.conversation.clear()
+            self.engine.clear()
             ui.info("已清空对话历史。")
         elif cmd == "/compact":
-            self.agent.compact_now()
+            self.engine.compact()
             ui.info("已压缩对话历史。")
         else:
             ui.error(f"未知命令: {cmd} (用 /help 查看)")
         return False
 
     def run_repl(self) -> None:
-        ui.banner(self.settings.model)
+        ui.banner(self.engine.settings.model)
         session: PromptSession = PromptSession(history=InMemoryHistory())
         while True:
             try:
@@ -108,7 +81,7 @@ class ClawApp:
                 continue
 
             try:
-                self.agent.run_turn(line)
+                self.engine.send(line)
             except KeyboardInterrupt:
                 ui.warning("\n已中断当前任务。")
             except Exception as exc:  # noqa: BLE001
@@ -116,7 +89,7 @@ class ClawApp:
 
     def run_once(self, task: str) -> None:
         try:
-            self.agent.run_turn(task)
+            self.engine.send(task)
         except Exception as exc:  # noqa: BLE001
             ui.error(str(exc))
             sys.exit(1)

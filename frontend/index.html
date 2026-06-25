@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LegalClaw</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">⚖</span>
+        <span class="title">LegalClaw</span>
+        <span id="version" class="version"></span>
+      </div>
+      <div class="actions">
+        <span id="model-badge" class="badge" title="当前模型"></span>
+        <button id="btn-clear" class="icon-btn" title="清空对话">清空</button>
+        <button id="btn-settings" class="icon-btn" title="设置">设置</button>
+      </div>
+    </header>
+
+    <main id="messages" class="messages">
+      <div class="empty-hint">
+        <h2>你好, 我是 LegalClaw</h2>
+        <p>一个能读写文件、执行命令、自主完成任务的 AI 助手。输入任务开始。</p>
+      </div>
+    </main>
+
+    <div id="status" class="status hidden"></div>
+
+    <footer class="composer">
+      <textarea id="input" rows="1" placeholder="给 LegalClaw 派个任务…  (Enter 发送 / Shift+Enter 换行)"></textarea>
+      <button id="btn-send" class="send-btn">发送</button>
+      <button id="btn-stop" class="stop-btn hidden">停止</button>
+    </footer>
+  </div>
+
+  <!-- 确认弹窗 -->
+  <div id="approval-overlay" class="overlay hidden">
+    <div class="modal">
+      <h3 id="approval-title">需要确认</h3>
+      <pre id="approval-preview" class="approval-preview"></pre>
+      <div class="modal-actions">
+        <button id="approval-no" class="btn">拒绝</button>
+        <button id="approval-all" class="btn">本次全部允许</button>
+        <button id="approval-yes" class="btn btn-primary">允许</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="modal modal-wide">
+      <h3>设置</h3>
+      <label class="field">
+        <span>模型 (litellm 标识)</span>
+        <input id="cfg-model" type="text" placeholder="openai/MiniMax/MiniMax-M2.7" />
+      </label>
+      <label class="field">
+        <span>API Base (兼容端点, 可选)</span>
+        <input id="cfg-base" type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+      </label>
+      <label class="field">
+        <span>API Key (留空表示不修改)</span>
+        <input id="cfg-key" type="password" placeholder="sk-..." />
+        <small id="cfg-key-hint" class="hint"></small>
+      </label>
+      <label class="field-inline">
+        <input id="cfg-auto" type="checkbox" />
+        <span>自动批准所有工具调用 (危险, 慎用)</span>
+      </label>
+      <div class="modal-actions">
+        <button id="settings-cancel" class="btn">取消</button>
+        <button id="settings-save" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="markdown.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

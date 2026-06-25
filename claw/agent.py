@@ -1,4 +1,4 @@
-"""Agent 核心: 工具调用循环。"""
+"""Agent 核心: 工具调用循环(界面无关, 通过 EventSink 输出)。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-from claw import ui
 from claw.config import Settings
-from claw.llm.client import LLMClient, ToolCall
+from claw.core.events import EventSink
+from claw.llm.client import LLMClient, LLMResponse, ToolCall
 from claw.memory import compact_history, estimate_tokens
 from claw.messages import Conversation
 from claw.safety import SafetyManager
@@ -36,37 +36,59 @@ class Agent:
         conversation: Conversation,
         safety: SafetyManager,
         settings: Settings,
+        sink: EventSink,
     ) -> None:
         self.client = client
         self.registry = registry
         self.conversation = conversation
         self.safety = safety
         self.settings = settings
+        self.sink = sink
 
     def run_turn(self, user_input: str) -> None:
         """处理一轮用户输入。"""
         self.conversation.add_user(user_input)
 
         for _ in range(self.settings.max_iterations):
+            if self.sink.is_cancelled():
+                self.sink.on_warning("已停止当前任务。")
+                return
             self._maybe_compact()
-            response = self.client.complete(
-                messages=self.conversation.messages,
-                tools=self.registry.schemas(),
-            )
+            response = self._get_response()
             self.conversation.add_assistant(response.raw_message)
 
             if not response.tool_calls:
-                ui.assistant_message(response.content or "")
+                if not self.sink.streaming:
+                    self.sink.on_assistant_text(response.content or "")
                 return
 
-            if response.content and response.content.strip():
-                ui.assistant_message(response.content)
+            if (
+                response.content
+                and response.content.strip()
+                and not self.sink.streaming
+            ):
+                self.sink.on_assistant_text(response.content)
 
             results = self._execute_tools(response.tool_calls)
             for call, result in results:
                 self.conversation.add_tool_result(call.id, call.name, result)
 
-        ui.warning(f"已达到最大迭代次数 ({self.settings.max_iterations}), 本轮停止。")
+        self.sink.on_warning(
+            f"已达到最大迭代次数 ({self.settings.max_iterations}), 本轮停止。"
+        )
+
+    def _get_response(self) -> LLMResponse:
+        """根据 sink 是否需要流式, 选择合适的 LLM 调用方式。"""
+        tools = self.registry.schemas()
+        if self.sink.streaming:
+            response = self.client.complete_stream(
+                messages=self.conversation.messages,
+                tools=tools,
+                on_delta=self.sink.on_assistant_delta,
+            )
+            self.sink.on_assistant_end()
+            return response
+        return self.client.complete(messages=self.conversation.messages, tools=tools)
 
     def _execute_tools(self, calls: list[ToolCall]) -> list[tuple[ToolCall, str]]:
         """先串行做解析与用户确认, 再并行执行已批准的工具, 最后按原序返回结果。"""
@@ -97,8 +119,7 @@ class Agent:
         output: list[tuple[ToolCall, str]] = []
         for idx, p in enumerate(prepared):
             result = self._truncate(results.get(idx, ""))
-            label = p.call.name
-            ui.tool_result(result, label=label)
+            self.sink.on_tool_result(p.call.name, result)
             output.append((p.call, result))
         return output
 
@@ -113,12 +134,15 @@ class Agent:
         except json.JSONDecodeError as exc:
             return _PreparedCall(call, None, {}, f"错误: 工具参数 JSON 解析失败: {exc}")
 
-        ui.tool_call(tool.preview(**args))
+        self.sink.on_tool_call(call.name, tool.preview(**args))
 
         command = args.get("command") if call.name == "run_command" else None
         if self.safety.needs_confirmation(tool.name, tool.mutating, command):
             dangerous = bool(command and self.safety.is_dangerous_command(command))
-            answer = ui.confirm(tool.preview(**args), dangerous=dangerous)
+            answer = self.sink.request_approval(
+                call.name, tool.preview(**args), dangerous
+            )
+            answer = (answer or "").strip().lower()
             if answer == "a" and not dangerous:
                 self.safety.remember_approve_all()
             elif answer not in ("y", "yes", "a"):
@@ -143,10 +167,10 @@ class Agent:
         threshold = int(self.settings.context_window() * self.settings.compact_threshold)
         if estimate_tokens(self.conversation.messages) < threshold:
             return
-        ui.info("上下文接近上限, 正在压缩历史...")
+        self.sink.on_info("上下文接近上限, 正在压缩历史...")
         compacted = compact_history(self.client, self.conversation.messages)
         self.conversation.set_messages(compacted)
-        ui.info("历史已压缩。")
+        self.sink.on_info("历史已压缩。")
 
     def compact_now(self) -> None:
         """手动触发压缩(供 /compact 命令使用)。"""

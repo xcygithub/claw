@@ -1,7 +1,11 @@
-# Claw
+# LegalClaw
 
-一个用 Python 实现的多模型编程 CLI Agent，风格类似 Claude Code / Cursor Agent。
-它在你的终端里运行，能自主读写文件、执行命令、搜索代码，循环完成编码任务。
+一个用 Python 实现的多模型 AI 助手，提供两种形态：
+
+- `claw`：终端 CLI Agent（类似 Claude Code / Cursor Agent）
+- `legalclaw`：Windows 桌面应用（pywebview + Web 界面），可打包成 `LegalClaw-0.2.0-Setup.exe`
+
+两者共用同一个 Python 核心（引擎 / 工具 / 记忆 / 任务编排）。
 
 ## 特性
 
@@ -14,7 +18,20 @@
 - 记忆系统：
   - 项目记忆文件 `CLAW.md`：启动自动加载，agent 可用 `update_memory` 主动写入长期知识
   - 上下文压缩：历史接近上限时自动摘要，支持 `/compact` 手动触发
-- 富终端 UI：基于 `rich` 渲染工具调用、结果与 Markdown 回复
+- 界面无关核心：Agent 通过 `EventSink` 事件接口输出，终端用 rich 渲染，桌面用流式 Web UI
+- 桌面化存储：配置存 `%APPDATA%\LegalClaw\config.json`，API Key 存 Windows 凭据管理器（keyring）
+
+## 桌面应用
+
+```bash
+pip install -e ".[desktop]"
+python -m claw.app      # 或安装后运行 legalclaw
+```
+
+打包成 `Setup.exe` 的完整流程见 [packaging/README.md](packaging/README.md)（PyInstaller + Inno Setup）。
+
+架构：前端 Web 界面 ←(pywebview JS 桥)→ `claw/app.py` 的 `Api` ←→ `ClawEngine` 核心。
+流式输出、工具调用可视化、确认弹窗、设置页（模型 / api_base / key / 自动批准）均在 GUI 内完成。
 
 ## 安装
 
@@ -112,8 +129,16 @@ claw/
   safety.py       危险操作确认
   ui.py           rich 终端渲染
   todos.py        任务清单(TODO)状态
-  llm/client.py   litellm 封装
+  llm/client.py   litellm 封装(含流式 complete_stream)
+  core/
+    events.py     EventSink 事件接口(界面无关)
+    console_sink.py 终端事件渲染
+    engine.py     会话引擎门面(CLI/GUI 共用)
+    storage.py    数据目录 + 配置 + keyring 密钥
   tools/          write_todos/read/write/edit/list/grep/glob/run_command/update_memory
+app.py            pywebview 桌面入口 + Api 桥接 + WebEventSink
+frontend/         Web 前端(index.html / app.js / markdown.js / styles.css)
+packaging/        LegalClaw.spec (PyInstaller) + installer.iss (Inno Setup)
 ```
 
 ## 许可证

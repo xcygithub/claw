@@ -1,7 +1,7 @@
 [project]
-name = "claw"
-version = "0.1.0"
-description = "Claw - a multi-model coding CLI agent (Claude Code style)"
+name = "legalclaw"
+version = "0.2.0"
+description = "LegalClaw - a multi-model AI assistant (CLI + Windows desktop app)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -12,10 +12,23 @@ dependencies = [
     "rich>=13.7.0",
     "prompt_toolkit>=3.0.43",
     "python-dotenv>=1.0.1",
+    "platformdirs>=4.2.0",
+    "keyring>=25.0.0",
+]
+
+[project.optional-dependencies]
+desktop = [
+    "pywebview>=5.1",
+]
+build = [
+    "pyinstaller>=6.6",
 ]
 
 [project.scripts]
 claw = "claw.cli:main"
+
+[project.gui-scripts]
+legalclaw = "claw.app:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

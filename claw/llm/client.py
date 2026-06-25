@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -78,6 +79,51 @@ class LLMClient:
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
         raise RuntimeError(f"LLM 调用失败(已重试 {self.max_retries} 次): {last_error}")
+
+    def complete_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        on_delta: Callable[[str], None] | None = None,
+        temperature: float = 0.0,
+    ) -> LLMResponse:
+        """流式调用: 实时通过 on_delta 推送文本增量, 结束后返回完整响应。
+
+        工具调用(tool_calls)在流式分片中是逐段拼接的, 这里收集全部分片后
+        用 litellm.stream_chunk_builder 重建出标准响应再规范化。
+        """
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                stream = litellm.completion(
+                    model=self.model,
+                    messages=messages,
+                    tools=tools or None,
+                    tool_choice="auto" if tools else None,
+                    temperature=temperature,
+                    stream=True,
+                    **self._extra_params(),
+                )
+                chunks = []
+                for chunk in stream:
+                    chunks.append(chunk)
+                    if on_delta:
+                        try:
+                            delta = chunk.choices[0].delta
+                            content = getattr(delta, "content", None)
+                        except (AttributeError, IndexError):
+                            content = None
+                        if content:
+                            on_delta(content)
+                rebuilt = litellm.stream_chunk_builder(chunks, messages=messages)
+                return self._normalize(rebuilt)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if attempt < self.max_retries - 1:
+                    time.sleep(2 ** attempt)
+        raise RuntimeError(
+            f"LLM 流式调用失败(已重试 {self.max_retries} 次): {last_error}"
+        )
 
     def summarize(self, messages: list[dict[str, Any]]) -> str:
         """无工具的纯文本补全, 用于上下文压缩生成摘要。"""
