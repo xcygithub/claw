@@ -33,13 +33,18 @@ def tool_call(preview: str) -> None:
     console.print(f"[cyan]›[/cyan] [bold]{preview}[/bold]")
 
 
-def tool_result(content: str, max_lines: int = 15) -> None:
+def tool_result(content: str, max_lines: int = 15, label: str | None = None) -> None:
     lines = content.splitlines()
     shown = lines[:max_lines]
     text = "\n".join(shown)
     if len(lines) > max_lines:
         text += f"\n[dim]... (省略 {len(lines) - max_lines} 行)[/dim]"
-    console.print(Panel(text, border_style="dim", expand=False))
+    title = f"[dim]{label}[/dim]" if label else None
+    console.print(Panel(text, border_style="dim", expand=False, title=title, title_align="left"))
+
+
+def todo_list(rendered: str) -> None:
+    console.print(Panel(rendered, border_style="magenta", title="任务清单", title_align="left", expand=False))
 
 
 def error(message: str) -> None:

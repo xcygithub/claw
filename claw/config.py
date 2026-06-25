@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     max_tool_output_chars: int = Field(
         default=20000, description="单个工具输出的最大字符数, 超出则截断"
     )
+    max_parallel_tools: int = Field(
+        default=8, description="单轮内并行执行工具的最大并发数"
+    )
 
     def context_window(self) -> int:
         """返回当前模型的上下文窗口大小(token), 失败则回退默认值。"""

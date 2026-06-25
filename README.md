@@ -8,6 +8,9 @@
 - 多模型可切换：基于 [litellm](https://github.com/BerriAI/litellm)，支持 OpenAI、Anthropic、Ollama 及任意 OpenAI 兼容服务
 - 工具调用循环：自主决定调用 `read_file` / `edit_file` / `run_command` / `grep` 等工具
 - 安全确认：写文件、执行命令默认需确认；高危命令（如 `rm -rf`）强提醒
+- 任务编排（L1）：
+  - 计划与 TODO 清单：复杂任务先用 `write_todos` 列计划，推进时更新状态，`/todos` 可查看
+  - 工具并行：同一轮内多个独立工具调用会并发执行（如同时读多个文件），明显提速
 - 记忆系统：
   - 项目记忆文件 `CLAW.md`：启动自动加载，agent 可用 `update_memory` 主动写入长期知识
   - 上下文压缩：历史接近上限时自动摘要，支持 `/compact` 手动触发
@@ -90,6 +93,7 @@ claw "为 utils.py 里的 parse_date 函数补充单元测试"
 | --- | --- |
 | `/model <名称>` | 切换模型，如 `/model anthropic/claude-3-5-sonnet-20241022` |
 | `/tools` | 列出已注册工具 |
+| `/todos` | 显示当前任务清单 |
 | `/clear` | 清空对话历史 |
 | `/compact` | 手动压缩对话历史 |
 | `/help` | 帮助 |
@@ -107,8 +111,9 @@ claw/
   prompts.py      系统提示词
   safety.py       危险操作确认
   ui.py           rich 终端渲染
+  todos.py        任务清单(TODO)状态
   llm/client.py   litellm 封装
-  tools/          read/write/edit/list/grep/glob/run_command/update_memory
+  tools/          write_todos/read/write/edit/list/grep/glob/run_command/update_memory
 ```
 
 ## 许可证

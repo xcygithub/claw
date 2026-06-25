@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Any
 
 from claw import ui
 from claw.config import Settings
@@ -10,7 +13,17 @@ from claw.llm.client import LLMClient, ToolCall
 from claw.memory import compact_history, estimate_tokens
 from claw.messages import Conversation
 from claw.safety import SafetyManager
-from claw.tools.base import ToolRegistry
+from claw.tools.base import Tool, ToolRegistry
+
+
+@dataclass
+class _PreparedCall:
+    """一次工具调用经解析/确认后的待执行状态。"""
+
+    call: ToolCall
+    tool: Tool | None
+    args: dict[str, Any]
+    rejected: str | None  # 非 None 表示已拒绝/出错, 直接作为结果
 
 
 class Agent:
@@ -49,42 +62,76 @@ class Agent:
             if response.content and response.content.strip():
                 ui.assistant_message(response.content)
 
-            for call in response.tool_calls:
-                result = self._execute_tool(call)
+            results = self._execute_tools(response.tool_calls)
+            for call, result in results:
                 self.conversation.add_tool_result(call.id, call.name, result)
 
         ui.warning(f"已达到最大迭代次数 ({self.settings.max_iterations}), 本轮停止。")
 
-    def _execute_tool(self, call: ToolCall) -> str:
+    def _execute_tools(self, calls: list[ToolCall]) -> list[tuple[ToolCall, str]]:
+        """先串行做解析与用户确认, 再并行执行已批准的工具, 最后按原序返回结果。"""
+        prepared = [self._prepare_call(call) for call in calls]
+
+        runnable = [
+            (idx, p)
+            for idx, p in enumerate(prepared)
+            if p.rejected is None and p.tool is not None
+        ]
+        results: dict[int, str] = {
+            idx: p.rejected for idx, p in enumerate(prepared) if p.rejected is not None
+        }
+
+        if len(runnable) <= 1:
+            for idx, p in runnable:
+                results[idx] = self._run_one(p.tool, p.args)
+        else:
+            workers = min(len(runnable), self.settings.max_parallel_tools)
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                future_to_idx = {
+                    executor.submit(self._run_one, p.tool, p.args): idx
+                    for idx, p in runnable
+                }
+                for future in as_completed(future_to_idx):
+                    results[future_to_idx[future]] = future.result()
+
+        output: list[tuple[ToolCall, str]] = []
+        for idx, p in enumerate(prepared):
+            result = self._truncate(results.get(idx, ""))
+            label = p.call.name
+            ui.tool_result(result, label=label)
+            output.append((p.call, result))
+        return output
+
+    def _prepare_call(self, call: ToolCall) -> _PreparedCall:
+        """解析参数并(在需要时)向用户确认。"""
         tool = self.registry.get(call.name)
         if tool is None:
-            return f"错误: 未知工具 {call.name}"
+            return _PreparedCall(call, None, {}, f"错误: 未知工具 {call.name}")
 
         try:
             args = json.loads(call.arguments or "{}")
         except json.JSONDecodeError as exc:
-            return f"错误: 工具参数 JSON 解析失败: {exc}"
+            return _PreparedCall(call, None, {}, f"错误: 工具参数 JSON 解析失败: {exc}")
 
-        preview = tool.preview(**args)
-        ui.tool_call(preview)
+        ui.tool_call(tool.preview(**args))
 
         command = args.get("command") if call.name == "run_command" else None
         if self.safety.needs_confirmation(tool.name, tool.mutating, command):
             dangerous = bool(command and self.safety.is_dangerous_command(command))
-            answer = ui.confirm(preview, dangerous=dangerous)
+            answer = ui.confirm(tool.preview(**args), dangerous=dangerous)
             if answer == "a" and not dangerous:
                 self.safety.remember_approve_all()
             elif answer not in ("y", "yes", "a"):
-                return "用户拒绝了该操作。"
+                return _PreparedCall(call, tool, args, "用户拒绝了该操作。")
 
+        return _PreparedCall(call, tool, args, None)
+
+    @staticmethod
+    def _run_one(tool: Tool, args: dict[str, Any]) -> str:
         try:
-            result = tool.run(**args)
+            return tool.run(**args)
         except Exception as exc:  # noqa: BLE001
-            result = f"错误: 工具执行异常: {exc}"
-
-        result = self._truncate(result)
-        ui.tool_result(result)
-        return result
+            return f"错误: 工具执行异常: {exc}"
 
     def _truncate(self, text: str) -> str:
         limit = self.settings.max_tool_output_chars

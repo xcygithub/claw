@@ -16,12 +16,14 @@ from claw.memory import load_project_memory
 from claw.messages import Conversation
 from claw.prompts import build_system_prompt
 from claw.safety import SafetyManager
+from claw.todos import TodoStore
 from claw.tools import build_default_registry
 
 HELP_TEXT = """可用命令:
   /help            显示帮助
   /model <名称>    切换模型 (litellm 标识)
   /tools           列出已注册的工具
+  /todos           显示当前任务清单
   /clear           清空对话历史
   /compact         手动压缩对话历史
   /exit, /quit     退出
@@ -37,7 +39,11 @@ class ClawApp:
             api_key=self.settings.api_key,
         )
         self.safety = SafetyManager(auto_approve=self.settings.auto_approve)
-        self.registry = build_default_registry(memory_path=self.settings.memory_file)
+        self.todo_store = TodoStore()
+        self.registry = build_default_registry(
+            memory_path=self.settings.memory_file,
+            todo_store=self.todo_store,
+        )
         memory = load_project_memory(self.settings.memory_file)
         if memory:
             ui.info(f"已加载项目记忆: {self.settings.memory_file}")
@@ -70,6 +76,8 @@ class ClawApp:
         elif cmd == "/tools":
             for tool in self.registry.all():
                 ui.console.print(f"  [cyan]{tool.name}[/cyan] - {tool.description}")
+        elif cmd == "/todos":
+            ui.todo_list(self.todo_store.render())
         elif cmd == "/clear":
             self.conversation.clear()
             ui.info("已清空对话历史。")

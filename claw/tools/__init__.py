@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from claw.todos import TodoStore
 from claw.tools.base import Tool, ToolRegistry
 from claw.tools.file_tools import (
     EditFileTool,
@@ -12,11 +13,16 @@ from claw.tools.file_tools import (
 from claw.tools.memory_tools import UpdateMemoryTool
 from claw.tools.search_tools import GlobTool, GrepTool
 from claw.tools.shell_tools import RunCommandTool
+from claw.tools.todo_tools import WriteTodosTool
 
 
-def build_default_registry(memory_path: str) -> ToolRegistry:
+def build_default_registry(
+    memory_path: str,
+    todo_store: TodoStore | None = None,
+) -> ToolRegistry:
     """构造默认工具注册表。"""
     registry = ToolRegistry()
+    registry.register(WriteTodosTool(store=todo_store or TodoStore()))
     registry.register(ReadFileTool())
     registry.register(WriteFileTool())
     registry.register(EditFileTool())
