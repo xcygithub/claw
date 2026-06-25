@@ -5,6 +5,12 @@
 
 from __future__ import annotations
 
+import os
+
+# 冻结环境下禁用 pydantic 第三方插件(如 logfire), 避免 inspect.getsource 崩溃。
+# 必须早于任何 pydantic 导入。
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
+
 import json
 import sys
 import threading
