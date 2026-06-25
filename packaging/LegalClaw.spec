@@ -31,8 +31,9 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=[],
-    excludes=[],
+    runtime_hooks=[os.path.join(ROOT, "packaging", "rthook_pydantic.py")],
+    # logfire 会注册 pydantic 插件, 在冻结环境用 inspect.getsource 读源码导致崩溃; 直接排除
+    excludes=["logfire"],
     noarchive=False,
 )
 
