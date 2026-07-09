@@ -34,6 +34,18 @@ def memory_path() -> Path:
     return data_dir() / "CLAW.md"
 
 
+def global_memory_path() -> Path:
+    """全局记忆文件(跨项目共享的个人偏好/常用命令), CLI 与桌面端共用。"""
+    return data_dir() / "GLOBAL.md"
+
+
+def sessions_dir() -> Path:
+    """会话快照根目录, 按项目路径分子目录存放。"""
+    path = data_dir() / "sessions"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def load_config() -> dict[str, Any]:
     path = config_path()
     if not path.exists():

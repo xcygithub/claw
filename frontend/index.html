@@ -16,6 +16,7 @@
       </div>
       <div class="actions">
         <span id="model-badge" class="badge" title="当前模型"></span>
+        <button id="btn-memory" class="icon-btn" title="记忆管理">记忆</button>
         <button id="btn-clear" class="icon-btn" title="清空对话">清空</button>
         <button id="btn-settings" class="icon-btn" title="设置">设置</button>
       </div>
@@ -74,6 +75,50 @@
       <div class="modal-actions">
         <button id="settings-cancel" class="btn">取消</button>
         <button id="settings-save" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 记忆管理弹窗 -->
+  <div id="memory-overlay" class="overlay hidden">
+    <div class="modal modal-wide modal-tall">
+      <div class="memory-tabs">
+        <button id="memory-tab-entries" class="tab-btn active">记忆条目</button>
+        <button id="memory-tab-sessions" class="tab-btn">历史会话</button>
+      </div>
+
+      <div id="memory-panel-entries" class="memory-panel">
+        <div class="memory-toolbar">
+          <input id="memory-search" type="text" placeholder="搜索记忆(留空显示全部)…" />
+          <select id="memory-scope-filter">
+            <option value="">全部范围</option>
+            <option value="project">项目 CLAW.md</option>
+            <option value="global">全局 GLOBAL.md</option>
+          </select>
+        </div>
+        <div id="memory-list" class="memory-list"></div>
+        <div class="memory-add">
+          <input id="memory-add-content" type="text" placeholder="新记忆内容…" />
+          <input id="memory-add-section" type="text" placeholder="小节(可选)" />
+          <select id="memory-add-scope">
+            <option value="project">项目</option>
+            <option value="global">全局</option>
+          </select>
+          <select id="memory-add-importance">
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+            <option value="low">low</option>
+          </select>
+          <button id="memory-add-btn" class="btn btn-primary">添加</button>
+        </div>
+      </div>
+
+      <div id="memory-panel-sessions" class="memory-panel hidden">
+        <div id="session-list" class="memory-list"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="memory-close" class="btn">关闭</button>
       </div>
     </div>
   </div>

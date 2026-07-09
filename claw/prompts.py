@@ -16,20 +16,20 @@ SYSTEM_PROMPT = """你是 Claw, 一个运行在用户终端里的编程助手 Ag
 - 编辑文件优先用 edit_file 做精确替换; 仅在新建或整体重写时用 write_file。
 - 执行命令前考虑其副作用; 危险操作会请求用户确认。
 - 完成任务后用简洁的中文向用户总结你做了什么、改了哪些文件、如何验证。
-- 遵循项目既有的代码风格与约定(见下方项目记忆, 如果有)。
+- 遵循项目既有的代码风格与约定(见下方记忆摘要, 如果有); 记忆不够详细时可用 search_memory 检索。
 - 不要编造文件路径或 API; 不确定时去查。
 
 当任务完成且不再需要调用工具时, 直接输出最终的中文总结。
 """
 
 
-def build_system_prompt(memory: str | None = None) -> str:
-    """拼接系统提示词与项目记忆。"""
-    if memory:
+def build_system_prompt(memory_digest: str | None = None) -> str:
+    """拼接系统提示词与记忆摘要(项目记忆 CLAW.md + 全局记忆 GLOBAL.md 的高优先级条目)。"""
+    if memory_digest:
         return (
             SYSTEM_PROMPT
-            + "\n\n--- 项目记忆 (CLAW.md) ---\n"
-            + memory.strip()
-            + "\n--- 项目记忆结束 ---\n"
+            + "\n\n--- 记忆摘要(项目 CLAW.md / 全局 GLOBAL.md, 按重要性排序) ---\n"
+            + memory_digest.strip()
+            + "\n--- 记忆摘要结束; 需要更多细节可用 search_memory 检索 ---\n"
         )
     return SYSTEM_PROMPT

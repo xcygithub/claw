@@ -1,8 +1,7 @@
-"""记忆系统: 项目记忆文件加载 + 上下文压缩(自动摘要)。"""
+"""上下文压缩(自动摘要)。结构化记忆的读写见 ``claw.memory_store``。"""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from claw.llm.client import LLMClient
@@ -17,18 +16,6 @@ _COMPACT_INSTRUCTION = """请把下面这段编程会话历史压缩成简洁的
 不要编造内容, 只总结已发生的。输出纯文本摘要即可。"""
 
 
-def load_project_memory(memory_file: str) -> str | None:
-    """读取项目根目录的记忆文件; 不存在返回 None。"""
-    path = Path(memory_file)
-    if path.exists() and path.is_file():
-        try:
-            content = path.read_text(encoding="utf-8").strip()
-            return content or None
-        except Exception:  # noqa: BLE001
-            return None
-    return None
-
-
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
     """粗略估算消息总 token 数(约 4 字符/token, 中文偏保守)。"""
     chars = 0
@@ -39,6 +26,25 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
         for call in msg.get("tool_calls", []) or []:
             chars += len(str(call.get("function", {}).get("arguments", "")))
     return chars // 3
+
+
+def render_transcript(messages: list[dict[str, Any]]) -> str:
+    """把消息列表转成给摘要/提取模型看的纯文本记录。
+
+    tool 角色消息必须紧跟其 assistant tool_calls, 单独提交易破坏配对,
+    这里只把它们转成纯文本描述, 不再作为独立的 tool 消息提交。
+    """
+    lines: list[str] = []
+    for msg in messages:
+        role = msg.get("role", "?")
+        content = msg.get("content") or ""
+        if msg.get("tool_calls"):
+            names = ", ".join(
+                c.get("function", {}).get("name", "?") for c in msg["tool_calls"]
+            )
+            content = (content + f" [调用工具: {names}]").strip()
+        lines.append(f"[{role}] {content}")
+    return "\n".join(lines)
 
 
 def compact_history(
@@ -59,20 +65,7 @@ def compact_history(
     if not to_compress:
         return messages
 
-    # tool 角色消息必须紧跟其 assistant tool_calls, 单独提交易破坏配对,
-    # 这里只把它们转成纯文本喂给摘要模型。
-    transcript_lines: list[str] = []
-    for msg in to_compress:
-        role = msg.get("role", "?")
-        content = msg.get("content") or ""
-        if msg.get("tool_calls"):
-            names = ", ".join(
-                c.get("function", {}).get("name", "?") for c in msg["tool_calls"]
-            )
-            content = (content + f" [调用工具: {names}]").strip()
-        transcript_lines.append(f"[{role}] {content}")
-
-    transcript = "\n".join(transcript_lines)
+    transcript = render_transcript(to_compress)
     summary = client.summarize(
         [
             {"role": "system", "content": _COMPACT_INSTRUCTION},

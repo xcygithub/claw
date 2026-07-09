@@ -141,6 +141,7 @@ class Api:
             sink=self.sink,
             settings=_build_gui_settings(),
             memory_file=str(storage.memory_path()),
+            session_key="desktop",
         )
         self._busy = threading.Lock()
 
@@ -181,6 +182,56 @@ class Api:
 
     def compact(self) -> None:
         self.engine.compact()
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        return self.engine.list_sessions()
+
+    def resume_session(self, session_id: str) -> bool:
+        return self.engine.resume(session_id)
+
+    # --- 记忆管理面板 ---
+    def list_memory(self, scope: str | None = None) -> list[dict[str, Any]]:
+        return self.engine.list_memory(scope or None)
+
+    def search_memory(
+        self, query: str, scope: str | None = None, top_k: int = 50
+    ) -> list[dict[str, Any]]:
+        return self.engine.search_memory(query, scope or None, top_k)
+
+    def add_memory_entry(
+        self,
+        content: str,
+        section: str,
+        tags: list[str],
+        importance: str,
+        scope: str,
+    ) -> dict[str, Any]:
+        return self.engine.add_memory_entry(
+            content=content,
+            section=section or None,
+            tags=tags or None,
+            importance=importance or "normal",
+            scope=scope or "project",
+        )
+
+    def update_memory_entry(
+        self,
+        entry_id: str,
+        content: str,
+        section: str,
+        tags: list[str],
+        importance: str,
+    ) -> bool:
+        return self.engine.update_memory_entry(
+            entry_id,
+            content=content or None,
+            section=section or None,
+            tags=tags if tags else None,
+            importance=importance or None,
+        )
+
+    def delete_memory_entry(self, entry_id: str) -> bool:
+        return self.engine.delete_memory_entry(entry_id)
 
     def get_todos(self) -> str:
         return self.engine.render_todos()

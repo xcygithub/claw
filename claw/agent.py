@@ -11,6 +11,8 @@ from claw.config import Settings
 from claw.core.events import EventSink
 from claw.llm.client import LLMClient, LLMResponse, ToolCall
 from claw.memory import compact_history, estimate_tokens
+from claw.memory_extract import apply_candidates, extract_candidates
+from claw.memory_store import MemoryStore
 from claw.messages import Conversation
 from claw.safety import SafetyManager
 from claw.tools.base import Tool, ToolRegistry
@@ -37,6 +39,7 @@ class Agent:
         safety: SafetyManager,
         settings: Settings,
         sink: EventSink,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self.client = client
         self.registry = registry
@@ -44,6 +47,7 @@ class Agent:
         self.safety = safety
         self.settings = settings
         self.sink = sink
+        self.memory_store = memory_store
 
     def run_turn(self, user_input: str) -> None:
         """处理一轮用户输入。"""
@@ -168,11 +172,30 @@ class Agent:
         if estimate_tokens(self.conversation.messages) < threshold:
             return
         self.sink.on_info("上下文接近上限, 正在压缩历史...")
+        self.extract_memory_now()
         compacted = compact_history(self.client, self.conversation.messages)
         self.conversation.set_messages(compacted)
         self.sink.on_info("历史已压缩。")
 
     def compact_now(self) -> None:
         """手动触发压缩(供 /compact 命令使用)。"""
+        self.extract_memory_now()
         compacted = compact_history(self.client, self.conversation.messages)
         self.conversation.set_messages(compacted)
+
+    def extract_memory_now(self) -> int:
+        """从当前对话里自动提取候选记忆并写入(source=auto)。返回新增条数。
+
+        供压缩/清空历史前调用, 避免旧对话被丢弃后知识彻底丢失; 关闭
+        ``auto_memory_extract`` 或没有绑定 memory_store 时直接跳过。
+        """
+        if not self.memory_store or not self.settings.auto_memory_extract:
+            return 0
+        try:
+            candidates = extract_candidates(self.client, self.conversation.messages)
+            added = apply_candidates(self.memory_store, candidates, scope="project")
+        except Exception:  # noqa: BLE001 - 提取失败不应影响压缩/清空主流程
+            return 0
+        if added:
+            self.sink.on_info(f"已自动提取 {added} 条记忆到项目记忆。")
+        return added

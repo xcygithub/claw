@@ -16,8 +16,13 @@
   - 计划与 TODO 清单：复杂任务先用 `write_todos` 列计划，推进时更新状态，`/todos` 可查看
   - 工具并行：同一轮内多个独立工具调用会并发执行（如同时读多个文件），明显提速
 - 记忆系统：
-  - 项目记忆文件 `CLAW.md`：启动自动加载，agent 可用 `update_memory` 主动写入长期知识
+  - 分层记忆：项目记忆 `CLAW.md`（当前项目）+ 全局记忆 `GLOBAL.md`（跨项目的个人偏好/常用命令），
+    agent 可用 `update_memory` 主动写入，条目带标签/重要性/来源，仍是可直接用文本编辑器打开的 Markdown
+  - 检索：记忆较多时只把高优先级摘要注入系统提示词，agent 可用 `search_memory` 按关键词检索完整记忆
+  - 自动提取：压缩/清空历史前自动从对话里提炼候选记忆并去重写入，减少"忘记手动记录"导致的丢失
+  - 会话持久化：对话自动落盘，`/resume` 或启动参数 `--continue`/`-c` 可恢复上次会话
   - 上下文压缩：历史接近上限时自动摘要，支持 `/compact` 手动触发
+  - 桌面端有独立的"记忆"面板：查看/搜索/编辑/删除记忆条目、浏览并恢复历史会话
 - 界面无关核心：Agent 通过 `EventSink` 事件接口输出，终端用 rich 渲染，桌面用流式 Web UI
 - 桌面化存储：配置存 `%APPDATA%\LegalClaw\config.json`，API Key 存 Windows 凭据管理器（keyring）
 
@@ -60,6 +65,11 @@ cp .env.example .env
 | `CLAW_AUTO_APPROVE` | 自动批准所有工具调用 | `false` |
 | `CLAW_MAX_ITERATIONS` | 单轮最大工具迭代数 | `25` |
 | `CLAW_COMPACT_THRESHOLD` | 触发压缩的上下文占比 | `0.7` |
+| `CLAW_MEMORY_FILE` | 项目记忆文件名 | `CLAW.md` |
+| `CLAW_MEMORY_GLOBAL_FILE` | 全局记忆文件路径，留空则用数据目录下的 `GLOBAL.md` | - |
+| `CLAW_MEMORY_DIGEST_CHARS` | 注入系统提示词的记忆摘要最大字符数 | `4000` |
+| `CLAW_AUTO_MEMORY_EXTRACT` | 压缩/清空历史前是否自动提取候选记忆 | `true` |
+| `CLAW_SESSION_PERSIST` | 是否持久化对话以支持 `/resume` | `true` |
 
 ## 接入第三方 / 国产模型（OpenAI 兼容端点）
 
@@ -104,6 +114,14 @@ python -m claw
 claw "为 utils.py 里的 parse_date 函数补充单元测试"
 ```
 
+恢复上次会话继续对话：
+
+```bash
+claw --continue
+# 或
+claw -c
+```
+
 ### 交互命令
 
 | 命令 | 说明 |
@@ -111,8 +129,13 @@ claw "为 utils.py 里的 parse_date 函数补充单元测试"
 | `/model <名称>` | 切换模型，如 `/model anthropic/claude-3-5-sonnet-20241022` |
 | `/tools` | 列出已注册工具 |
 | `/todos` | 显示当前任务清单 |
-| `/clear` | 清空对话历史 |
-| `/compact` | 手动压缩对话历史 |
+| `/clear` | 清空对话历史(清空前会自动提取一次候选记忆) |
+| `/compact` | 手动压缩对话历史(压缩前同样会自动提取记忆) |
+| `/memory` | 列出全部记忆条目(项目 CLAW.md + 全局 GLOBAL.md) |
+| `/memory search <关键词>` | 按关键词检索记忆 |
+| `/memory forget <id>` | 删除指定 id 的记忆条目 |
+| `/resume` | 列出可恢复的历史会话 |
+| `/resume <序号>` | 恢复对应的历史会话，继续上次对话 |
 | `/help` | 帮助 |
 | `/exit` | 退出 |
 
@@ -124,7 +147,9 @@ claw/
   agent.py        工具调用主循环
   config.py       配置加载
   messages.py     会话历史
-  memory.py       项目记忆加载 + 上下文压缩
+  memory.py       上下文压缩(自动摘要) + 对话转写(compact/extract 共用)
+  memory_store.py 结构化记忆存储: 分层(项目/全局)解析/检索/摘要
+  memory_extract.py 自动记忆提取: 压缩/清空前从对话中提炼候选记忆并去重写入
   prompts.py      系统提示词
   safety.py       危险操作确认
   ui.py           rich 终端渲染
@@ -134,10 +159,11 @@ claw/
     events.py     EventSink 事件接口(界面无关)
     console_sink.py 终端事件渲染
     engine.py     会话引擎门面(CLI/GUI 共用)
-    storage.py    数据目录 + 配置 + keyring 密钥
-  tools/          write_todos/read/write/edit/list/grep/glob/run_command/update_memory
-app.py            pywebview 桌面入口 + Api 桥接 + WebEventSink
-frontend/         Web 前端(index.html / app.js / markdown.js / styles.css)
+    storage.py    数据目录 + 配置 + keyring 密钥 + 记忆/会话路径
+    session_store.py 会话持久化(按项目分桶的 JSON 快照, 供 /resume 恢复)
+  tools/          write_todos/read/write/edit/list/grep/glob/run_command/update_memory/search_memory
+app.py            pywebview 桌面入口 + Api 桥接(含记忆面板/会话恢复接口) + WebEventSink
+frontend/         Web 前端(index.html / app.js / markdown.js / styles.css), 含记忆管理弹窗
 packaging/        LegalClaw.spec (PyInstaller) + installer.iss (Inno Setup)
 ```
 

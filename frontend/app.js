@@ -243,6 +243,161 @@
     $("model-badge").textContent = model || "";
   }
 
+  // 记忆管理弹窗
+  const memoryOverlay = $("memory-overlay");
+  const memoryList = $("memory-list");
+  const sessionList = $("session-list");
+
+  function debounce(fn, ms) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  function renderMemoryEntries(entries) {
+    if (!entries || !entries.length) {
+      memoryList.innerHTML = '<div class="memory-empty">暂无记忆</div>';
+      return;
+    }
+    memoryList.innerHTML = "";
+    entries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "memory-item";
+      const tagsHtml = entry.tags && entry.tags.length
+        ? `<div class="memory-tags">${entry.tags.map((t) => "#" + window.escapeHtml(t)).join(" ")}</div>`
+        : "";
+      row.innerHTML = `
+        <div class="memory-item-head">
+          <span class="memory-scope ${entry.scope}">${entry.scope === "global" ? "全局" : "项目"}</span>
+          <span class="memory-section">${window.escapeHtml(entry.section)}</span>
+          <span class="memory-importance imp-${entry.importance}">${entry.importance}</span>
+          ${entry.source === "auto" ? '<span class="memory-auto">自动提取</span>' : ""}
+          <span class="memory-item-actions">
+            <button class="mini-btn memory-edit-btn">编辑</button>
+            <button class="mini-btn memory-delete-btn">删除</button>
+          </span>
+        </div>
+        <div class="memory-content">${window.escapeHtml(entry.content)}</div>
+        ${tagsHtml}
+      `;
+      row.querySelector(".memory-delete-btn").addEventListener("click", async () => {
+        if (!confirm("确认删除这条记忆?")) return;
+        await window.pywebview.api.delete_memory_entry(entry.id);
+        reloadMemoryList();
+      });
+      row.querySelector(".memory-edit-btn").addEventListener("click", () =>
+        startEditMemoryEntry(row, entry)
+      );
+      memoryList.appendChild(row);
+    });
+  }
+
+  function startEditMemoryEntry(row, entry) {
+    const contentEl = row.querySelector(".memory-content");
+    contentEl.innerHTML = "";
+    const textarea = document.createElement("textarea");
+    textarea.className = "memory-edit-input";
+    textarea.value = entry.content;
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "mini-btn btn-primary";
+    saveBtn.textContent = "保存";
+    saveBtn.addEventListener("click", async () => {
+      await window.pywebview.api.update_memory_entry(
+        entry.id,
+        textarea.value.trim(),
+        "",
+        [],
+        ""
+      );
+      reloadMemoryList();
+    });
+    contentEl.appendChild(textarea);
+    contentEl.appendChild(saveBtn);
+    textarea.focus();
+  }
+
+  async function reloadMemoryList() {
+    const query = $("memory-search").value.trim();
+    const scope = $("memory-scope-filter").value;
+    try {
+      const entries = query
+        ? await window.pywebview.api.search_memory(query, scope, 50)
+        : await window.pywebview.api.list_memory(scope);
+      renderMemoryEntries(entries);
+    } catch (e) {
+      memoryList.innerHTML = `<div class="memory-empty">加载失败: ${window.escapeHtml(String(e))}</div>`;
+    }
+  }
+
+  $("memory-search").addEventListener("input", debounce(reloadMemoryList, 250));
+  $("memory-scope-filter").addEventListener("change", reloadMemoryList);
+
+  $("memory-add-btn").addEventListener("click", async () => {
+    const content = $("memory-add-content").value.trim();
+    if (!content) return;
+    const section = $("memory-add-section").value.trim();
+    const scope = $("memory-add-scope").value;
+    const importance = $("memory-add-importance").value;
+    await window.pywebview.api.add_memory_entry(content, section, [], importance, scope);
+    $("memory-add-content").value = "";
+    $("memory-add-section").value = "";
+    reloadMemoryList();
+  });
+
+  async function renderSessions() {
+    let sessions = [];
+    try {
+      sessions = await window.pywebview.api.list_sessions();
+    } catch (e) {
+      sessionList.innerHTML = `<div class="memory-empty">加载失败: ${window.escapeHtml(String(e))}</div>`;
+      return;
+    }
+    if (!sessions.length) {
+      sessionList.innerHTML = '<div class="memory-empty">暂无历史会话</div>';
+      return;
+    }
+    sessionList.innerHTML = "";
+    sessions.forEach((s) => {
+      const row = document.createElement("div");
+      row.className = "session-item";
+      const ts = s.updated_at ? new Date(s.updated_at * 1000).toLocaleString() : "";
+      row.innerHTML = `
+        <div class="session-meta">
+          <div class="session-time">${window.escapeHtml(ts)}</div>
+          <div class="session-preview">${window.escapeHtml(s.preview || "(无预览)")}</div>
+        </div>
+        <button class="mini-btn btn-primary session-resume-btn">恢复</button>
+      `;
+      row.querySelector(".session-resume-btn").addEventListener("click", async () => {
+        await window.pywebview.api.resume_session(s.id);
+        memoryOverlay.classList.add("hidden");
+        messages.innerHTML =
+          '<div class="empty-hint"><h2>已恢复历史会话</h2><p>可以继续上次的对话。</p></div>';
+        setStatus("已恢复历史会话");
+      });
+      sessionList.appendChild(row);
+    });
+  }
+
+  function switchMemoryTab(tab) {
+    $("memory-tab-entries").classList.toggle("active", tab === "entries");
+    $("memory-tab-sessions").classList.toggle("active", tab === "sessions");
+    $("memory-panel-entries").classList.toggle("hidden", tab !== "entries");
+    $("memory-panel-sessions").classList.toggle("hidden", tab !== "sessions");
+    if (tab === "sessions") renderSessions();
+  }
+  $("memory-tab-entries").addEventListener("click", () => switchMemoryTab("entries"));
+  $("memory-tab-sessions").addEventListener("click", () => switchMemoryTab("sessions"));
+
+  $("btn-memory").addEventListener("click", () => {
+    memoryOverlay.classList.remove("hidden");
+    switchMemoryTab("entries");
+    reloadMemoryList();
+  });
+  $("memory-close").addEventListener("click", () => memoryOverlay.classList.add("hidden"));
+
   // 启动: 等待 pywebview 就绪
   window.addEventListener("pywebviewready", async () => {
     try {

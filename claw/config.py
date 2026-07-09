@@ -34,6 +34,19 @@ class Settings(BaseSettings):
         default=0.7, description="触发上下文压缩的 token 占比阈值 (0-1)"
     )
     memory_file: str = Field(default="CLAW.md", description="项目记忆文件名")
+    memory_global_file: str = Field(
+        default="",
+        description="全局记忆文件路径, 留空则使用数据目录下的 GLOBAL.md",
+    )
+    memory_digest_chars: int = Field(
+        default=4000, description="注入系统提示词的记忆摘要最大字符数"
+    )
+    auto_memory_extract: bool = Field(
+        default=True, description="是否在压缩/清空历史前自动提取候选记忆"
+    )
+    session_persist: bool = Field(
+        default=True, description="是否将对话快照持久化以支持 /resume 恢复"
+    )
     max_tool_output_chars: int = Field(
         default=20000, description="单个工具输出的最大字符数, 超出则截断"
     )
