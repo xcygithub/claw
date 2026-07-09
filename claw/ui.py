@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
@@ -27,6 +28,45 @@ def assistant_message(content: str) -> None:
     if not content.strip():
         return
     console.print(Markdown(content))
+
+
+def start_assistant_stream() -> Live:
+    """开始一段流式助手回复: 用 rich.Live 边收边渲染 Markdown。"""
+    live = Live(Markdown(""), console=console, refresh_per_second=12)
+    live.start()
+    return live
+
+
+def update_assistant_stream(live: Live, text: str) -> None:
+    if text.strip():
+        live.update(Markdown(text))
+
+
+def stop_assistant_stream(live: Live) -> None:
+    live.stop()
+
+
+def start_reasoning_stream() -> Live:
+    """开始展示思考过程: 结束后不留痕(transient), 只保留一行完成提示。"""
+    live = Live(
+        Text("", style="dim italic"),
+        console=console,
+        refresh_per_second=12,
+        transient=True,
+    )
+    live.start()
+    return live
+
+
+def update_reasoning_stream(live: Live, text: str) -> None:
+    tail = text[-1200:]  # 思考内容可能很长, 终端只展示尾部, 避免刷屏
+    live.update(Text(tail, style="dim italic"))
+
+
+def stop_reasoning_stream(live: Live, char_count: int) -> None:
+    live.stop()
+    if char_count:
+        console.print(f"[dim]已完成思考 ({char_count} 字)[/dim]")
 
 
 def tool_call(preview: str) -> None:

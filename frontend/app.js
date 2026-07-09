@@ -8,6 +8,7 @@
   const statusBar = $("status");
 
   let currentAssistant = null; // 当前流式助手气泡 {el, raw}
+  let currentReasoning = null; // 当前流式思考面板 {el, body, raw}
   let busy = false;
 
   function clearEmptyHint() {
@@ -49,7 +50,38 @@
     }
   }
 
+  function ensureReasoning() {
+    if (currentReasoning) return currentReasoning;
+    clearEmptyHint();
+    const wrap = document.createElement("div");
+    wrap.className = "reasoning";
+    wrap.innerHTML = `
+      <div class="reasoning-head">
+        <span class="reasoning-icon">✻</span>
+        <span class="reasoning-title">思考中…</span>
+      </div>
+      <pre class="reasoning-body"></pre>`;
+    wrap.querySelector(".reasoning-head").addEventListener("click", () =>
+      wrap.classList.toggle("collapsed")
+    );
+    messages.appendChild(wrap);
+    currentReasoning = { el: wrap, body: wrap.querySelector(".reasoning-body"), raw: "" };
+    scrollDown();
+    return currentReasoning;
+  }
+
+  function finalizeReasoning() {
+    if (currentReasoning) {
+      const count = currentReasoning.raw.length;
+      currentReasoning.el.querySelector(".reasoning-title").textContent =
+        count ? `已完成思考 (${count} 字)` : "思考中…";
+      currentReasoning.el.classList.add("collapsed", "done");
+      currentReasoning = null;
+    }
+  }
+
   function addToolCall(name, preview) {
+    finalizeReasoning();
     finalizeAssistant();
     const el = document.createElement("div");
     el.className = "tool collapsed";
@@ -113,16 +145,26 @@
   // 后端事件入口
   window.__clawEvent = function (evt) {
     switch (evt.type) {
+      case "reasoning_delta": {
+        const r = ensureReasoning();
+        r.raw += evt.text;
+        r.body.textContent = r.raw;
+        scrollDown();
+        break;
+      }
       case "assistant_delta":
+        finalizeReasoning();
         ensureAssistant().raw += evt.text;
         // 流式期间以纯文本预览, 结束再渲染 markdown
         currentAssistant.el.textContent = currentAssistant.raw;
         scrollDown();
         break;
       case "assistant_end":
+        finalizeReasoning();
         finalizeAssistant();
         break;
       case "assistant_text": {
+        finalizeReasoning();
         const a = ensureAssistant();
         a.raw = evt.text;
         finalizeAssistant();
@@ -147,6 +189,7 @@
         showApproval(evt);
         break;
       case "done":
+        finalizeReasoning();
         finalizeAssistant();
         setBusy(false);
         setStatus("");

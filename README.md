@@ -23,7 +23,9 @@
   - 会话持久化：对话自动落盘，`/resume` 或启动参数 `--continue`/`-c` 可恢复上次会话
   - 上下文压缩：历史接近上限时自动摘要，支持 `/compact` 手动触发
   - 桌面端有独立的"记忆"面板：查看/搜索/编辑/删除记忆条目、浏览并恢复历史会话
-- 界面无关核心：Agent 通过 `EventSink` 事件接口输出，终端用 rich 渲染，桌面用流式 Web UI
+- 界面无关核心：Agent 通过 `EventSink` 事件接口输出，终端(rich Live)与桌面(流式 Web UI)均为流式输出
+- 思考过程可见：对支持 `reasoning_content` 的推理模型（如 DeepSeek-R1、Claude extended thinking），
+  会把思考过程与正式回答分开实时展示（终端为可流式的暗色斜体提示，桌面端为可折叠面板）
 - 桌面化存储：配置存 `%APPDATA%\LegalClaw\config.json`，API Key 存 Windows 凭据管理器（keyring）
 
 ## 桌面应用

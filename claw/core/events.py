@@ -29,6 +29,13 @@ class EventSink:
     def on_assistant_end(self) -> None:
         """流式: 当前助手消息结束。"""
 
+    def on_reasoning_delta(self, delta: str) -> None:
+        """流式: 一段思考过程(reasoning/thinking)增量文本。
+
+        仅推理模型(如 DeepSeek-R1、Claude extended thinking)才会触发,
+        且只在 ``streaming`` 模式下由 ``complete_stream`` 推送。
+        """
+
     def on_tool_call(self, name: str, preview: str) -> None:
         """即将执行某个工具。"""
 

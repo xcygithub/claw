@@ -26,6 +26,7 @@ class LLMResponse:
     """LLM 返回的助手消息(已规范化)。"""
 
     content: str | None = None
+    reasoning_content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw_message: dict[str, Any] = field(default_factory=dict)
     usage: dict[str, Any] = field(default_factory=dict)
@@ -85,12 +86,17 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         on_delta: Callable[[str], None] | None = None,
+        on_reasoning_delta: Callable[[str], None] | None = None,
         temperature: float = 0.0,
     ) -> LLMResponse:
         """流式调用: 实时通过 on_delta 推送文本增量, 结束后返回完整响应。
 
         工具调用(tool_calls)在流式分片中是逐段拼接的, 这里收集全部分片后
         用 litellm.stream_chunk_builder 重建出标准响应再规范化。
+
+        部分推理模型(如 DeepSeek-R1、Claude extended thinking 等)会在
+        delta 上额外携带 ``reasoning_content`` 字段(litellm 已统一命名),
+        通过 ``on_reasoning_delta`` 单独推送, 不会混入正文 ``on_delta``。
         """
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
@@ -107,16 +113,30 @@ class LLMClient:
                 chunks = []
                 for chunk in stream:
                     chunks.append(chunk)
-                    if on_delta:
-                        try:
-                            delta = chunk.choices[0].delta
-                            content = getattr(delta, "content", None)
-                        except (AttributeError, IndexError):
-                            content = None
-                        if content:
-                            on_delta(content)
+                    try:
+                        delta = chunk.choices[0].delta
+                    except (AttributeError, IndexError):
+                        delta = None
+                    if delta is None:
+                        continue
+                    reasoning = getattr(delta, "reasoning_content", None)
+                    if reasoning and on_reasoning_delta:
+                        on_reasoning_delta(reasoning)
+                    content = getattr(delta, "content", None)
+                    if content and on_delta:
+                        on_delta(content)
                 rebuilt = litellm.stream_chunk_builder(chunks, messages=messages)
-                return self._normalize(rebuilt)
+                response = self._normalize(rebuilt)
+                if not response.reasoning_content:
+                    # stream_chunk_builder 重建消息时可能丢弃了 reasoning_content,
+                    # 用已收集的分片自行拼接作为兜底。
+                    collected = "".join(
+                        getattr(c.choices[0].delta, "reasoning_content", None) or ""
+                        for c in chunks
+                        if getattr(c, "choices", None)
+                    )
+                    response.reasoning_content = collected or None
+                return response
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if attempt < self.max_retries - 1:
@@ -170,6 +190,7 @@ class LLMClient:
 
         return LLMResponse(
             content=message.content,
+            reasoning_content=getattr(message, "reasoning_content", None),
             tool_calls=tool_calls,
             raw_message=raw_message,
             usage=usage,

@@ -64,6 +64,9 @@ class WebEventSink(EventSink):
     def on_assistant_end(self) -> None:
         self._emit("assistant_end")
 
+    def on_reasoning_delta(self, delta: str) -> None:
+        self._emit("reasoning_delta", text=delta)
+
     def on_assistant_text(self, text: str) -> None:
         self._emit("assistant_text", text=text)
 

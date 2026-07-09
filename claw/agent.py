@@ -89,6 +89,7 @@ class Agent:
                 messages=self.conversation.messages,
                 tools=tools,
                 on_delta=self.sink.on_assistant_delta,
+                on_reasoning_delta=self.sink.on_reasoning_delta,
             )
             self.sink.on_assistant_end()
             return response
